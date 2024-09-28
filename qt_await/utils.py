@@ -1,8 +1,12 @@
 from PyQt5 import QtCore
 
-from .core import SignalQueue
+from .core import one_of, SignalQueue
+
+# Where possible, these are regular functions returning a SignalQueue, so
+# they can be used with one_of()
 
 def sleep(ms):
+    """Wait for ms (milliseconds) to elapse"""
     timer = QtCore.QTimer()
     timer.setSingleShot(True)
     sq = SignalQueue(timer.timeout)
@@ -10,6 +14,11 @@ def sleep(ms):
     return sq
 
 async def sleep_loop(ms):
+    """Use ``async for _ in sleep_loop(ms):`` to wake up at regular intervals
+
+    If the code in the loop takes longer than the timer interval, the next
+    iteration will start straight away, but it won't try to catch up with a backlog.
+    """
     timer = QtCore.QTimer()
     sq = SignalQueue(timer.timeout)
     timer.start(ms)
@@ -20,6 +29,7 @@ async def sleep_loop(ms):
         yield
 
 async def with_timeout(waitable, timeout_ms):
+    """Raise TimeoutError if something isn't ready in timeout_ms."""
     timer = QtCore.QTimer()
     timer.setSingleShot(True)
     timeout_q = SignalQueue(timer.timeout)
@@ -30,6 +40,11 @@ async def with_timeout(waitable, timeout_ms):
     return sig_obj
 
 def run_process(qproc: QtCore.QProcess, program=None, arguments=None):
+    """Start a QProcess and wait for it to finish
+
+    Like QProcess.start(), the executable & arguments can be passed in, or
+    set beforehand (``.setProgram()`` & ``.setArguments()``).
+    """
     sq = SignalQueue(qproc.finished)
     if program is not None:
         qproc.start(program, arguments)

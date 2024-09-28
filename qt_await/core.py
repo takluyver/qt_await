@@ -14,6 +14,7 @@ __all__ = [
 ]
 
 class SignalPlumbing(QtCore.QObject):
+    """Internal machinery, created once per thread"""
     _thread_insts = {}
 
     def __init__(self, parent=None):
@@ -79,6 +80,11 @@ class ReceivedSignal:
 
 
 class SignalQueue(QtCore.QObject):
+    """Capture emitted signals and return them via await
+
+    ``await`` an instance of SignalQueue to get the next signal it captures.
+    When a signal is ready, the caller gets back a ReceivedSignal object.
+    """
     def __init__(self, *signals):
         super().__init__()
         self.signals_q = deque()
@@ -109,7 +115,7 @@ class SignalQueue(QtCore.QObject):
 
 
 class one_of:
-    """Wait for one of the given signals to arrive"""
+    """Wait for a signal on any of the given SignalQueues"""
     def __init__(self, *waitables):
         catchers = []
         for obj in waitables:
@@ -131,7 +137,7 @@ class one_of:
 
 
 def connect_async(signal, async_slot):
-    """Connect a signal to an async function slot"""
+    """Connect a Qt signal to an ``async def`` function slot"""
     nargs = len(signature(async_slot).parameters)
     slot_owner: QtCore.QObject = async_slot.__self__
     plumbing = SignalPlumbing.forThread(slot_owner.thread())
@@ -145,4 +151,5 @@ def connect_async(signal, async_slot):
 
 
 def start_async(coro):
+    """Start running an ``async def`` function with Qt"""
     return SignalPlumbing.forCurrentThread().start_coro(coro)
