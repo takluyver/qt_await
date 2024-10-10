@@ -1,4 +1,5 @@
 import inspect
+import traceback
 import types
 from collections import deque
 from functools import partial
@@ -50,8 +51,9 @@ class Error(Result):
 class Task:
     _result = None
 
-    def __init__(self, inner_coro):
+    def __init__(self, inner_coro, tb=False):
         self.inner_coro = inner_coro
+        self.tb = tb
         self.waiters = {}  # coroutines waiting for this
 
     def __await__(self):
@@ -65,10 +67,6 @@ class Task:
 
     def set(self, res: Result):
         self._result = res
-        if self.waiters:
-            k = next(iter(self.waiters))
-            coro = self.waiters.pop(k)
-            res.send(coro)
 
     def result(self):
         return self._result.unwrap()
@@ -99,8 +97,8 @@ class SignalPlumbing(QtCore.QObject):
     def forCurrentThread(cls):
         return cls.forThread(QtCore.QThread.currentThread())
 
-    def start_coro(self, coro: types.CoroutineType):
-        self.tasks[id(coro)] = t = Task(coro)
+    def start_coro(self, coro: types.CoroutineType, _tb=False):
+        self.tasks[id(coro)] = t = Task(coro, tb=_tb)
         self.waiting[id(coro)] = ()
         self.step_coro(coro, Value(None))
         return t
@@ -122,7 +120,9 @@ class SignalPlumbing(QtCore.QObject):
             # This coroutine errored out
             task = self.tasks.pop(id(coro))
             self.task_finished(task, Error(e))
-            # TODO: show traceback for top-level tasks?
+            if task.tb:
+                print("Uncaught exception in", coro)
+                traceback.print_exception(e)
             return
 
         # Hook up what it's waiting for to continue
@@ -229,11 +229,11 @@ def connect_async(signal, async_slot):
     def start_slot(*args):
         args = args[:nargs]
         coro = async_slot(*args)
-        plumbing.start_coro(coro)
+        plumbing.start_coro(coro, _tb=True)
 
     signal.connect(start_slot)
 
 
 def start_async(coro):
     """Start running an ``async def`` function with Qt"""
-    return SignalPlumbing.forCurrentThread().start_coro(coro)
+    return SignalPlumbing.forCurrentThread().start_coro(coro, _tb=True)
