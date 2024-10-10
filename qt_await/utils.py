@@ -2,8 +2,6 @@ from PyQt5 import QtCore
 
 from .core import one_of, SignalQueue
 
-# Where possible, these are regular functions returning a SignalQueue, so
-# they can be used with one_of()
 
 def sleep(ms):
     """Wait for ms (milliseconds) to elapse"""
@@ -39,15 +37,18 @@ async def with_timeout(waitable, timeout_ms):
         raise TimeoutError(timeout_ms)
     return sig_obj
 
-def run_process(qproc: QtCore.QProcess, program=None, arguments=None):
+async def run_process(qproc: QtCore.QProcess, program=None, arguments=None):
     """Start a QProcess and wait for it to finish
 
     Like QProcess.start(), the executable & arguments can be passed in, or
     set beforehand (``.setProgram()`` & ``.setArguments()``).
     """
-    sq = SignalQueue(qproc.finished)
+    sq = SignalQueue(qproc.finished, qproc.errorOccurred)
     if program is not None:
         qproc.start(program, arguments)
     else:
         qproc.start()
-    return sq
+    sig = await sq
+    if sig.signal == qproc.errorOccurred:
+        raise RuntimeError(f"QProcess failed with error {sig.args[0]}")
+    return sig
