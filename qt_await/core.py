@@ -99,10 +99,14 @@ class SignalQueue(QtCore.QObject):
 
     ``await`` an instance of SignalQueue to get the next signal it captures.
     When a signal is ready, the caller gets back a ReceivedSignal object.
+
+    By default the queue will keep any amount of signals that arrive before you
+    await them. If max_buffer_size is set, new signals will replace older ones
+    once the buffer fills up. Either way can be tricky.
     """
-    def __init__(self, *signals):
+    def __init__(self, *signals, max_buffer_size=None):
         super().__init__()
-        self.signals_q = deque()
+        self.signals_q = deque(maxlen=max_buffer_size)
         self.waiters = {}
         for signal in signals:
             self.add(signal)

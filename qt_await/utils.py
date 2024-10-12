@@ -7,7 +7,7 @@ def sleep(ms):
     """Wait for ms (milliseconds) to elapse"""
     timer = QtCore.QTimer()
     timer.setSingleShot(True)
-    sq = SignalQueue(timer.timeout)
+    sq = SignalQueue(timer.timeout, max_buffer_size=1)
     timer.start(ms)
     return sq
 
@@ -18,12 +18,10 @@ async def sleep_loop(ms):
     iteration will start straight away, but it won't try to catch up with a backlog.
     """
     timer = QtCore.QTimer()
-    sq = SignalQueue(timer.timeout)
+    sq = SignalQueue(timer.timeout, max_buffer_size=1)
     timer.start(ms)
     while True:
         await sq
-        # If the timer is firing faster than we wait for it, discard excess signals
-        sq.signals_q.clear()
         yield
 
 async def run_process(qproc: QtCore.QProcess, program=None, arguments=None):
