@@ -51,7 +51,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.write_output(f"date output: {out_s}")
 
         proc = QtCore.QProcess(self)
-        ec, _ = await with_timeout(run_process(proc, "sleep", ["2"]), 5000)
+        ec, _ = await with_timeout(run_process(proc, "sleep", ["2"]), 500)
         self.write_output(f"sleep exited with {ec}")
 
     async def http_request(self):

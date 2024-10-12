@@ -1,6 +1,6 @@
 from PyQt5 import QtCore
 
-from .core import one_of, SignalQueue
+from .core import SignalQueue
 
 
 def sleep(ms):
@@ -25,17 +25,6 @@ async def sleep_loop(ms):
         # If the timer is firing faster than we wait for it, discard excess signals
         sq.signals_q.clear()
         yield
-
-async def with_timeout(waitable, timeout_ms):
-    """Raise TimeoutError if something isn't ready in timeout_ms."""
-    timer = QtCore.QTimer()
-    timer.setSingleShot(True)
-    timeout_q = SignalQueue(timer.timeout)
-    timer.start(timeout_ms)
-    sig_obj = await one_of(waitable, timeout_q)
-    if sig_obj.sender is timer:
-        raise TimeoutError(timeout_ms)
-    return sig_obj
 
 async def run_process(qproc: QtCore.QProcess, program=None, arguments=None):
     """Start a QProcess and wait for it to finish

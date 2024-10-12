@@ -10,66 +10,11 @@ from PyQt5 import QtCore
 __all__ = [
     "ReceivedSignal",
     "SignalQueue",
-    "one_of",
+    "with_timeout",
     "connect_async",
     "start_async"
 ]
 
-class Result:
-    def unwrap(self):
-        raise NotImplementedError
-
-    def send(self, coro):
-        raise NotImplementedError
-
-class Value(Result):
-    def __init__(self, value):
-        self.value = value
-
-    def __repr__(self):
-        return f"Value({self.value!r})"
-
-    def unwrap(self):
-        return self.value
-
-    def send(self, coro):
-        return coro.send(self.value)
-
-class Error(Result):
-    def __init__(self, exc):
-        self.exc = exc
-
-    def __repr__(self):
-        return f"Error({self.exc!r})"
-
-    def unwrap(self):
-        raise self.exc
-
-    def send(self, coro):
-        return coro.throw(self.exc)
-
-class Task:
-    _result = None
-
-    def __init__(self, inner_coro, tb=False):
-        self.inner_coro = inner_coro
-        self.tb = tb
-        self.waiters = {}  # coroutines waiting for this
-
-    def __await__(self):
-        if self._result is None:
-            yield self
-
-        return self._result.unwrap()
-
-    def done(self):
-        return self._result is not None
-
-    def set(self, res: Result):
-        self._result = res
-
-    def result(self):
-        return self._result.unwrap()
 
 class SignalPlumbing(QtCore.QObject):
     """Internal machinery, created once per thread"""
@@ -78,7 +23,6 @@ class SignalPlumbing(QtCore.QObject):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.waiting = {}  # id(coro): tuple(things that can wake it up)
-        self.tasks = {}  # id(coro): Task
 
     @classmethod
     def forThread(cls, thread):
@@ -97,46 +41,35 @@ class SignalPlumbing(QtCore.QObject):
     def forCurrentThread(cls):
         return cls.forThread(QtCore.QThread.currentThread())
 
-    def start_coro(self, coro: types.CoroutineType, _tb=False):
-        self.tasks[id(coro)] = t = Task(coro, tb=_tb)
+    def start_coro(self, coro: types.CoroutineType):
         self.waiting[id(coro)] = ()
-        self.step_coro(coro, Value(None))
-        return t
+        self.step_coro(coro, None)
 
-    def step_coro(self, coro, result: Result):
+    def step_coro(self, coro, value):
         # Unhook the coroutine from anything else it was waiting for
         for catcher in self.waiting.pop(id(coro)):
             catcher.waiters.pop(id(coro), None)
 
         # Run the next step
         try:
-            catchers = result.send(coro)
-        except StopIteration as si:
+            catchers = coro.send(value)
+        except StopIteration:
             # This coroutine has finished normally
-            task = self.tasks.pop(id(coro))
-            self.task_finished(task, Value(si.value))
             return
         except BaseException as e:
             # This coroutine errored out
-            task = self.tasks.pop(id(coro))
-            self.task_finished(task, Error(e))
-            if task.tb:
-                print("Uncaught exception in", coro)
-                traceback.print_exception(e)
+            print("Uncaught exception in", coro.__qualname__)
+            traceback.print_exception(e)
             return
 
         # Hook up what it's waiting for to continue
         for catcher in catchers:
-            if isinstance(catcher, (Task, SignalQueue)):
+            if isinstance(catcher, SignalQueue):
                 catcher.waiters[id(coro)] = coro
             else:
                 raise TypeError(f"Unexpected {type(catcher)}")
 
         self.waiting[id(coro)] = catchers
-
-    def task_finished(self, task: Task, result: Result):
-        for waiter in task.waiters.values():
-            QtCore.QTimer.singleShot(0, lambda: self.step_coro(waiter, result))
 
 
 class ReceivedSignal:
@@ -178,7 +111,7 @@ class SignalQueue(QtCore.QObject):
             # Something is waiting for a signal - deliver it immediately
             k = next(iter(self.waiters))
             coro = self.waiters.pop(k)
-            SignalPlumbing.forCurrentThread().step_coro(coro, Value(sig_obj))
+            SignalPlumbing.forCurrentThread().step_coro(coro, sig_obj)
         else:
             # Nothing waiting, queue the signal until it's requested
             self.signals_q.append(sig_obj)
@@ -191,33 +124,42 @@ class SignalQueue(QtCore.QObject):
         return sig_obj
 
 
-class one_of:
-    """Wait for a signal on any of the given SignalQueues"""
-    def __init__(self, *waitables):
-        catchers = []
-        for obj in waitables:
-            if isinstance(obj, one_of):
-                catchers.extend(obj.catchers)
-            elif isinstance(obj, SignalQueue):
-                catchers.append(obj)
-            elif inspect.iscoroutine(obj):
-                task = SignalPlumbing.forCurrentThread().start_coro(obj)
-                catchers.append(task)
-            else:
-                raise TypeError(str(type(obj)))
-        self.catchers = tuple(catchers)
+class with_timeout:
+    def __init__(self, awaitable, timeout_ms):
+        if inspect.iscoroutine(awaitable):
+            self.coro = awaitable
+        elif isinstance(awaitable, SignalQueue):
+            self.coro = awaitable.__await__()
+        else:
+            raise TypeError(
+                f"Expected coroutine or SignalQueue, not {type(awaitable)}"
+            )
+        self.timer = QtCore.QTimer()
+        self.timer.setSingleShot(True)
+        self.timer.setInterval(timeout_ms)
 
     def __await__(self):
-        for catcher in self.catchers:
-            if isinstance(catcher, SignalQueue):
-                if catcher.signals_q:
-                    return catcher.signals_q.popleft()
-            else: # Task
-                if catcher.done():
-                    return catcher.result()
+        timeout_q = SignalQueue(self.timer.timeout)
+        self.timer.start()
 
-        sig_obj = yield self.catchers
-        return sig_obj
+        signal = None  # To start coroutine
+
+        while True:
+            try:
+                sig_qs = self.coro.send(signal)
+            except StopIteration as si:
+                # Coroutine finished successfully
+                self.timer.stop()
+                return si.value
+            except:
+                # Error in coroutine
+                self.timer.stop()
+                raise
+
+            signal = yield (sig_qs + (timeout_q,))
+            if signal.sender is self.timer:
+                # TODO: cancel inner coroutine
+                raise TimeoutError(f"Timeout expired ({self.timer.interval()} ms)")
 
 
 def connect_async(signal, async_slot):
@@ -229,11 +171,11 @@ def connect_async(signal, async_slot):
     def start_slot(*args):
         args = args[:nargs]
         coro = async_slot(*args)
-        plumbing.start_coro(coro, _tb=True)
+        plumbing.start_coro(coro)
 
     signal.connect(start_slot)
 
 
 def start_async(coro):
     """Start running an ``async def`` function with Qt"""
-    return SignalPlumbing.forCurrentThread().start_coro(coro, _tb=True)
+    return SignalPlumbing.forCurrentThread().start_coro(coro)
