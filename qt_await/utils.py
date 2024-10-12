@@ -1,6 +1,6 @@
 from PyQt5 import QtCore
 
-from .core import SignalQueue
+from .core import SignalQueue, Cancelled
 
 
 def sleep(ms):
@@ -37,7 +37,12 @@ async def run_process(qproc: QtCore.QProcess, program=None, arguments=None):
         qproc.start(program, arguments)
     else:
         qproc.start()
-    sig = await sq
+    try:
+        sig = await sq
+    except Cancelled:
+        qproc.terminate()
+        raise
+
     if sig.signal == qproc.errorOccurred:
         raise RuntimeError(f"QProcess failed with error {sig.args[0]}")
     return sig

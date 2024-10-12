@@ -72,6 +72,11 @@ class SignalPlumbing(QtCore.QObject):
         self.waiting[id(coro)] = catchers
 
 
+class Cancelled(BaseException):
+    """Raised inside tasks when they are cancelled by a timeout"""
+    pass
+
+
 class ReceivedSignal:
     """Received signal object - can be unpacked to the signal arguments"""
     def __init__(self, sender, signal, args):
@@ -158,7 +163,10 @@ class with_timeout:
 
             signal = yield (sig_qs + (timeout_q,))
             if signal.sender is self.timer:
-                # TODO: cancel inner coroutine
+                try:
+                    self.coro.throw(Cancelled("Cancelled by timeout"))
+                except (Cancelled, StopIteration):
+                    pass
                 raise TimeoutError(f"Timeout expired ({self.timer.interval()} ms)")
 
 
