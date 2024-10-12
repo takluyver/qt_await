@@ -134,6 +134,13 @@ class SignalQueue(QtCore.QObject):
 
 
 class with_timeout:
+    """Run a coroutine with a time limit
+
+    The timeout is specified in ms, following Qt conventions.
+    If the timeout expires, TimeoutError is normally raised to the caller.
+    In the inner coroutine, Cancelled is raised. If that triggers another
+    exception, the caller will see that instead of TimeoutError.
+    """
     def __init__(self, awaitable, timeout_ms):
         if inspect.iscoroutine(awaitable):
             self.coro = awaitable
