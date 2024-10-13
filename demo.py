@@ -3,7 +3,8 @@ import time
 from PyQt5 import QtCore, QtNetwork, QtWidgets, QtGui
 
 from qt_await import (
-    connect_async, start_async, with_timeout, sleep_loop, run_process, SignalQueue
+    connect_async, start_async, SignalQueue, with_timeout,
+    sleep_loop, run_process, read_streaming_text
 )
 
 class MainWindow(QtWidgets.QMainWindow):
@@ -28,6 +29,10 @@ class MainWindow(QtWidgets.QMainWindow):
         buttons_vbox.addWidget(button_http)
         connect_async(button_http.clicked, self.http_request)
 
+        button_stream = QtWidgets.QPushButton("Streaming")
+        buttons_vbox.addWidget(button_stream)
+        connect_async(button_stream.clicked, self.read_stream)
+
         self.counter_sb = QtWidgets.QSpinBox()
         start_async(self.count_up())
         buttons_vbox.addWidget(self.counter_sb)
@@ -38,9 +43,10 @@ class MainWindow(QtWidgets.QMainWindow):
         self.write_cursor = self.output.textCursor()
         hbox.addWidget(self.output)
 
-    def write_output(self, text):
+    def print(self, obj, end='\n'):
+        """print text at the end of the display area"""
         self.write_cursor.movePosition(QtGui.QTextCursor.MoveOperation.End)
-        self.write_cursor.insertText(text + '\n')
+        self.write_cursor.insertText(str(obj) + end)
         vsb = self.output.verticalScrollBar()
         vsb.setValue(vsb.maximum())  # Scroll to end
 
@@ -48,11 +54,11 @@ class MainWindow(QtWidgets.QMainWindow):
         proc = QtCore.QProcess(self)
         await run_process(proc, "date", [])
         out_s = bytes(proc.readAllStandardOutput()).decode().strip()
-        self.write_output(f"date output: {out_s}")
+        self.print(f"date output: {out_s}")
 
         proc = QtCore.QProcess(self)
         ec, _ = await with_timeout(run_process(proc, "sleep", ["2"]), 5000)
-        self.write_output(f"sleep exited with {ec}")
+        self.print(f"sleep exited with {ec}")
 
     async def http_request(self):
         mgr = QtNetwork.QNetworkAccessManager()
@@ -65,8 +71,17 @@ class MainWindow(QtWidgets.QMainWindow):
 
         status = reply.attribute(QtNetwork.QNetworkRequest.Attribute.HttpStatusCodeAttribute)
         content_type = reply.header(QtNetwork.QNetworkRequest.KnownHeaders.ContentTypeHeader)
-        self.write_output(f"HTTP response {status} in {t1 - t0:.3f}s")
-        self.write_output(f"  mime type {content_type}")
+        self.print(f"HTTP response {status} in {t1 - t0:.3f}s")
+        self.print(f"  mime type {content_type}")
+
+    async def read_stream(self):
+        # This works with any QIODevice - illustrated with a QProcess
+        proc = QtCore.QProcess(self)
+        proc.start('ping', ['-c', '4', '8.8.8.8'])
+        async for s in read_streaming_text(proc):
+            self.print(s, end='')
+        self.print("ping finished")
+        proc.deleteLater()
 
     async def count_up(self):
         async for _ in sleep_loop(1000):
