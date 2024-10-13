@@ -1,3 +1,5 @@
+from qt_await import read_streaming_text
+
 # qt-await
 
 This lets you use Python's `async` & `await` syntax with PyQt or PySide
@@ -41,6 +43,14 @@ await with_timeout(..., 3000)
 
 # Run a QProcess & wait for its finished signal
 await run_process(proc, "sleep", ["2"])
+
+# Get streaming bytes from a QIODevice (e.g. a process or a socket)
+async for b in read_streaming_bytes(...):
+    dest.writee(b)
+
+# Similar, but decoding bytes output to strings
+async for s in read_streaming_text(...):
+    print(s, end='')
 ```
 
 All this code needs to be in `async def` functions, so there are two extra
