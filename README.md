@@ -1,5 +1,3 @@
-from qt_await import read_streaming_text
-
 # qt-await
 
 This lets you use Python's `async` & `await` syntax with PyQt or PySide
@@ -46,7 +44,7 @@ await run_process(proc, "sleep", ["2"])
 
 # Get streaming bytes from a QIODevice (e.g. a process or a socket)
 async for b in read_streaming_bytes(...):
-    dest.writee(b)
+    dest.write(b)
 
 # Similar, but decoding bytes output to strings
 async for s in read_streaming_text(...):
@@ -69,6 +67,11 @@ for that) or trio (see [`qtrio`](https://pypi.org/project/qtrio/#description)),
 or any other Python async libraries. It assumes you're doing things the Qt way -
 `QProcess` for subprocesses, `QThread` for threads, `QNetworkRequest` for HTTP,
 and so on. It aims to fit in with these APIs as much as possible.
+
+It's also not really an async framework itself. If you want to write
+significant amounts of async code in Python, trio or asyncio will provide more
+robust machinery & better abstractions. `qt_await` just lets you sprinkle a bit
+of `await` in your Python Qt code.
 
 Another thing you might want is the [`qt-async-threads`](https://pypi.org/project/qt-async-threads/)
 package, which lets you wrap arbitrary slow Python functions in a thread and
