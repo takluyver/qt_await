@@ -5,13 +5,13 @@ from PyQt5 import QtCore
 from .core import SignalQueue, Cancelled
 
 
-def sleep(ms):
+async def sleep(ms):
     """Wait for ms (milliseconds) to elapse"""
     timer = QtCore.QTimer()
     timer.setSingleShot(True)
     sq = SignalQueue(timer.timeout, max_buffer_size=1)
     timer.start(ms)
-    return sq
+    await sq
 
 async def sleep_loop(ms):
     """Use ``async for _ in sleep_loop(ms):`` to wake up at regular intervals
