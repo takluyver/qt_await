@@ -173,7 +173,7 @@ class with_timeout:
                 raise
 
             signal = yield (sig_qs + (timeout_q,))
-            if signal.sender is self.timer:
+            if signal.signal == self.timer.timeout:
                 try:
                     self.coro.throw(Cancelled("Cancelled by timeout"))
                 except (Cancelled, StopIteration):
