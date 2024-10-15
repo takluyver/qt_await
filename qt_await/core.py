@@ -5,7 +5,7 @@ from collections import deque
 from functools import partial
 from inspect import signature
 
-from PyQt5 import QtCore
+from qtpy import QtCore
 
 __all__ = [
     "ReceivedSignal",

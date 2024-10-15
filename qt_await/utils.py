@@ -1,6 +1,6 @@
 import codecs
 
-from PyQt5 import QtCore
+from qtpy import QtCore
 
 from .core import SignalQueue, Cancelled
 
